@@ -23,10 +23,14 @@
             <div id="fb-root"></div> 
             <script src="http://connect.facebook.net/en_US/all.js"></script> 
             <script> 
-                FB.init({appId: '194478650562619', cookie: true});
+                FB.init({appId: '217525421645173', 
+                      cookie:true,
+                      status:true,
+                      oauth:true,
+                      xfbml:true});
  
                 FB.getLoginStatus(function(response) {
-                    if (response.session) {
+                    if (response.authResponse) {
                       init();
                     } else {
                       // no user session available, someone you dont know
@@ -36,9 +40,10 @@
  
                 function login() {
                     FB.login(function(response) {
-                        if (response.session) {
+                        if (response.authResponse) {
                             init();
                         } else {
+                            console.log(response);
                             alert('Login Failed!');
                         }
                     });

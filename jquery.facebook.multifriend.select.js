@@ -27,6 +27,7 @@
         var settings = $.extend({
             max_selected: -1,
             max_selected_message: "{0} of {1} selected",
+            sort_birthdays: true,
 			pre_selected_friends: [],
 			exclude_friends: [],
 			friend_fields: "id,name",
@@ -52,6 +53,8 @@
 			  }
 			  return o;
 		};
+
+        var friends; //container to hold friend objects
 		
         // ----------+----------+----------+----------+----------+----------+----------+
         // Initialization of container
@@ -60,6 +63,7 @@
             "<div id='jfmfs-friend-selector'>" +
             "    <div id='jfmfs-inner-header'>" +
             "        <span class='jfmfs-title'>" + settings.labels.filter_title + " </span><input type='text' id='jfmfs-friend-filter-text' value='" + settings.labels.filter_default + "'/>" +
+            "        <a id='jfmfs-sort-alpha' href='#'>A-Z</a> | <a id='jfmfs-sort-birthdays' href='#'>Birthday</a>" + 
             "        <a class='filter-link selected' id='jfmfs-filter-all' href='#'>" + settings.labels.all + "</a>" +
             "        <a class='filter-link' id='jfmfs-filter-selected' href='#'>" + settings.labels.selected + " (<span id='jfmfs-selected-count'>0</span>)</a>" +
             ((settings.max_selected > 0) ? "<div id='jfmfs-max-selected-wrapper'></div>" : "") +
@@ -73,18 +77,29 @@
 			preselected_friends_graph = arrayToObjectGraph(settings.pre_selected_friends),
 			excluded_friends_graph = arrayToObjectGraph(settings.exclude_friends),
             all_friends;
+
+        // Add birthdays to fields if sort_birthdays is true
+        settings.friend_fields += ",birthday"    
             
         FB.api('/me/friends?fields=' + settings.friend_fields, function(response) {
-            var sortedFriendData = response.data.sort(settings.sorter),
+            friends = response.data
+            renderFriends(friends.sort(settings.sorter));
+        });
+
+        var renderFriends = function (friends) {
+            var sortedFriendData = friends
                 preselectedFriends = {},
                 buffer = [],
-			    selectedClass = "";
+                selectedClass = "";
+                
             
             $.each(sortedFriendData, function(i, friend) {
-				if(! (friend.id in excluded_friends_graph)) {
-					selectedClass = (friend.id in preselected_friends_graph) ? "selected" : "";
-	                buffer.push("<div class='jfmfs-friend " + selectedClass + " ' id='" + friend.id  +"'><img/><div class='friend-name'>" + friend.name + "</div></div>");            
-				}
+                if(! (friend.id in excluded_friends_graph)) {
+                    selectedClass = (friend.id in preselected_friends_graph) ? "selected" : "";
+                    var birthdayHtml = renderBirthday(friend.birthday);
+                    
+                    buffer.push("<div class='jfmfs-friend " + selectedClass + " ' id='" + friend.id  +"'><img/><div class='friend-name'>" + friend.name + birthdayHtml + "</div></div>");            
+                }
             });
             friend_container.append(buffer.join(""));
             
@@ -97,7 +112,8 @@
             });
 
             init();
-        });
+            
+        };
         
         
         // ----------+----------+----------+----------+----------+----------+----------+
@@ -198,6 +214,54 @@
                 elem.trigger("jfmfs.selection.changed", [obj.getSelectedIdsAndNames()]);
             });
 
+            //sort by alpha
+            $("#jfmfs-sort-alpha").click(function(event) {
+                event.preventDefault();
+                friend_container.empty();
+                renderFriends(friends.sort(settings.sorter));
+            });
+            
+    
+            // sort by birthday
+            $("#jfmfs-sort-birthdays").click(function(event) {
+                event.preventDefault();
+
+                friend_container.empty();
+
+                var currentMonth = new Date().getMonth() + 1;
+                var upcoming = [];
+                var past = [];
+               
+                $.each(friends, function(i, friend) {
+                    if (friend.birthday) {
+                        var bday = friend.birthday;
+                        //if the birthday is after today
+                        if (currentMonth < bday.substr(0, 2) * 1 || currentMonth == bday.substr(0,2) * 1 && new Date().getDate() <= new Date(bday).getDate()) {
+                            upcoming.push(friend);
+                        } else {
+                            past.push(friend);
+                        }
+                    }
+                });
+
+                
+                //set the year to current year because of birth years being different.
+                var year = new Date().getFullYear();
+                upcoming = upcoming.sort(function(a, b) {
+                    return new Date(a.birthday).setYear(year) - new Date(b.birthday).setYear(year);
+                });
+                // sort past birthdays
+                past = past.sort(function(a, b) {
+                    return new Date(a.birthday).setYear(year) - new Date(b.birthday).setYear(year);
+                });
+
+                // append past birthdays to upcoming 
+                upcoming.push.apply(upcoming, past);
+                renderFriends(upcoming);
+                
+               
+            });
+
             // filter by selected, hide all non-selected
             $("#jfmfs-filter-selected").click(function(event) {
 				event.preventDefault();
@@ -256,7 +320,9 @@
             elem.find(".jfmfs-button").hover(
                 function(){ $(this).addClass("jfmfs-button-hover");} , 
                 function(){ $(this).removeClass("jfmfs-button-hover");}
-            );      
+            );
+
+                
             
             // manages lazy loading of images
             var getViewportHeight = function() {
@@ -325,6 +391,34 @@
             var message = settings.labels.max_selected_message.replace("{0}", selectedCount()).replace("{1}", settings.max_selected);
             $("#jfmfs-max-selected-wrapper").html( message );
         };
+
+        // builds birthday html
+        var renderBirthday = function(birthday) {
+            birthdayHtml = '';
+            var monthAbbr;
+
+            if (birthday !== undefined) {
+                birthday = birthday.replace(/\//g, ', ');
+                
+                switch (birthday.substring(0, 3)) {
+                    case '01,': monthAbbr = 'Jan'; break;
+                    case '02,': monthAbbr = 'Feb'; break;
+                    case '03,': monthAbbr = 'Mar'; break;
+                    case '04,': monthAbbr = 'Apr'; break;
+                    case '05,': monthAbbr = 'May'; break;
+                    case '06,': monthAbbr = 'Jun'; break;
+                    case '07,': monthAbbr = 'Jul'; break;
+                    case '08,': monthAbbr = 'Aug'; break;
+                    case '09,': monthAbbr = 'Sep'; break;
+                    case '10,': monthAbbr = 'Oct'; break;
+                    case '11,': monthAbbr = 'Nov'; break;
+                    case '12,': monthAbbr = 'Dec'; break;
+                }
+
+                birthdayHtml = "<div class='jfms-birthday-display'>" + monthAbbr + birthday.substring(3) + "</div>";
+            }
+            return birthdayHtml;
+        };  
         
     };
     
